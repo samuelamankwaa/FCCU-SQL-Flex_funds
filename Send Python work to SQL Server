@@ -1,0 +1,49 @@
+import pandas as pd
+import numpy as np
+import pyodbc
+
+pd.set_option('display.max_rows', None)
+cnxn = pyodbc.connect('DRIVER={SQL Server};\
+                      SERVER=DXPLORE;\
+                      DATABASE=DataMart')
+df1 = pd.read_sql_query('SELECT * FROM [DataMart].[FCCU].[Subscription_Payroll_Enrollment_Snapshot]', cnxn)
+df2 = pd.read_sql_query('SELECT * FROM [DataMart].[FCCU].[Subscription_Payroll_Enrollment]', cnxn)
+df1['CurrentAdvAmt'] = df1['CurrentAdvAmt'].astype('object')
+df2['CurrentAdvAmt'] = df2['CurrentAdvAmt'].astype('object')
+res = (df2.merge(df1, on=['Member_No','Individual_Id','Status','Enroll_Date','Current_Advance_Date','CurrentAdvAmt','Restricted','Unenroll_Date','Company_Name'], how='outer', indicator=True)
+      .query('_merge != "both"')
+      .drop('_merge', 1))
+#res
+Final = df2.merge(res, on= ['Member_No','Individual_Id','Status','Enroll_Date','Current_Advance_Date','CurrentAdvAmt','Restricted','Unenroll_Date','Company_Name'], how = 'inner')
+Final = Final[['id','Member_No','Individual_Id','Status','Enroll_Date','Current_Advance_Date','CurrentAdvAmt','Restricted','Unenroll_Date','Company_Name']]
+df_all = pd.concat([df1.set_index('id'), Final.set_index('id')], 
+                   axis='columns', keys=['Before', 'After'])
+df_final = df_all.swaplevel(axis='columns')[Final.columns[1:]]
+pd.set_option('display.max_columns',None)
+Final2 = df_final.merge(Final, on= ['id'], how ='inner')
+Final2.drop(['Member_No','Individual_Id','Status','Enroll_Date','Current_Advance_Date','CurrentAdvAmt','Restricted','Unenroll_Date','Company_Name'], axis=1, inplace=True)
+Final2['Run_date_Time'] = pd.to_datetime('today')
+Final2.columns = ['id','Member_No_Before','Member_No_After','Individual_Id_Before','Individual_Id_After','Status_Before','Status_After','Enroll_Date_Before','Enroll_Date_After','Current_Advance_Date_Before','Current_Advance_Date_After','CurrentAdvAmt_Before','CurrentAdvAmt_After','Restricted_Before','Restricted_After','Unenroll_Date_Before','Unenroll_Date_After','Company_Name_Before','Company_Name_After','Run_Date_Time']
+Final2['Current_Advance_Date_Before'] = Final2['Current_Advance_Date_Before'].astype(object).where(Final2['Current_Advance_Date_Before'].notnull(), None)
+Final2['Current_Advance_Date_After'] = Final2['Current_Advance_Date_After'].astype(object).where(Final2['Current_Advance_Date_After'].notnull(), None)
+Final2['Enroll_Date_Before'] = Final2['Enroll_Date_Before'].astype(object).where(Final2['Enroll_Date_Before'].notnull(), None)
+Final2['Unenroll_Date_Before'] = Final2['Unenroll_Date_Before'].astype(object).where(Final2['Unenroll_Date_Before'].notnull(), None)
+Final2['Unenroll_Date_After'] = Final2['Unenroll_Date_After'].astype(object).where(Final2['Unenroll_Date_After'].notnull(), None)
+Final2 = Final2.fillna(0)
+Final2['Unenroll_Date_Before'] = Final2['Unenroll_Date_Before'].astype('datetime64[ns]')
+Final2['Unenroll_Date_After'] = Final2['Unenroll_Date_After'].astype('datetime64[ns]')
+Final2['Current_Advance_Date_Before'] = Final2['Current_Advance_Date_Before'].astype('datetime64[ns]')
+Final2['Current_Advance_Date_After'] = Final2['Current_Advance_Date_After'].astype('datetime64[ns]')
+Final2['CurrentAdvAmt_Before'] = Final2['CurrentAdvAmt_Before'].astype('float64')
+Final2['CurrentAdvAmt_After'] = Final2['CurrentAdvAmt_After'].astype('float64')
+Final2['Restricted_Before'] = Final2['Restricted_Before'].astype('object')
+Final2['Restricted_After'] = Final2['Restricted_After'].astype('object')
+Final2['Enroll_Date_Before'] = Final2['Enroll_Date_Before'].astype('datetime64[ns]')
+Final2['Enroll_Date_After'] = Final2['Enroll_Date_After'].astype('datetime64[ns]')
+cursor = cnxn.cursor()
+for index, row in Final2.iterrows():   
+     cursor.execute("INSERT INTO DataMart.FCCU.Subscription_Payroll_Enrollment_Change_Log(id,Member_No_Before,Member_No_After,Individual_Id_Before,Individual_Id_After,Status_Before,Status_After,Enroll_Date_Before,Enroll_Date_After,Current_Advance_Date_Before,Current_Advance_Date_After,CurrentAdvAmt_Before,CurrentAdvAmt_After,Restricted_Before,Restricted_After,Unenroll_Date_Before,Unenroll_Date_After,Company_Name_Before,Company_Name_After,Run_Date_Time) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row.id, row.Member_No_Before, row.Member_No_After, row.Individual_Id_Before, row.Individual_Id_After, row.Status_Before, row.Status_After, row.Enroll_Date_Before, row.Enroll_Date_After, row.Current_Advance_Date_Before, row.Current_Advance_Date_After, row.CurrentAdvAmt_Before, row.CurrentAdvAmt_After, row.Restricted_Before, row.Restricted_After, row.Unenroll_Date_Before, row.Unenroll_Date_After, row.Company_Name_Before, row.Company_Name_After, row.Run_Date_Time) 
+     cnxn.commit()
+cursor.close()
+#Final2
+#Final2.to_excel('Flexfunds.xlsx', engine='openpyxl')
